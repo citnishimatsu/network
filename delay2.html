@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>混雑シミュレーター：音声優先制御あり</title>
+<style>
+:root{--bg:#f7f7f5;--card:#fff;--tx:#1d1d1b;--mut:#6b6b66;--bd:#dcdcd6;--v:#2563eb;--f:#d97706;--ok:#16a34a;--late:#f59e0b;--lost:#dc2626;color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#161615;--card:#212120;--tx:#ececE8;--mut:#9a9a93;--bd:#3a3a37;--v:#60a5fa;--f:#fbbf24;--ok:#4ade80;--late:#fbbf24;--lost:#f87171;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#161615;--card:#212120;--tx:#ececE8;--mut:#9a9a93;--bd:#3a3a37;--v:#60a5fa;--f:#fbbf24;--ok:#4ade80;--late:#fbbf24;--lost:#f87171;color-scheme:dark}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.6 -apple-system,"Hiragino Sans","Noto Sans JP",sans-serif}
+main{max-width:860px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:4px 0 2px}
+.sub{color:var(--mut);font-size:13px;margin:0 0 12px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px 14px;margin-bottom:12px}
+.card h2{font-size:13px;margin:0 0 8px;color:var(--mut);font-weight:600}
+canvas{width:100%;max-width:100%;display:block;vertical-align:top;overflow:hidden}#net{height:230px}#chart{height:150px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button{font:inherit;font-size:13px;padding:7px 12px;border-radius:8px;border:1px solid var(--bd);background:var(--card);color:var(--tx);cursor:pointer}
+button.on{background:var(--tx);color:var(--bg)}
+input[type=range]{flex:1;min-width:160px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.m{background:var(--bg);border-radius:8px;padding:8px 10px}
+.m b{display:block;font-size:20px}
+.m span{font-size:11px;color:var(--mut)}
+.msg{min-height:5.2em;font-size:14px;padding:10px 12px;border-radius:8px;border-left:4px solid var(--ok);background:var(--bg)}
+.leg{display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:6px}
+.leg i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+.bar{height:10px;background:var(--bg);border-radius:5px;overflow:hidden}
+.bar div{height:100%;background:var(--f);width:0}
+.queue-stats{margin-top:8px;padding:10px 12px;background:var(--bg);border-radius:8px;display:grid;gap:5px;font-size:13px;line-height:1.6;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+/* ①・②・③を同じ画面で比較できるよう、表示をまとめる */
+.monitor-card{padding:12px 14px}
+.monitor-title{font-size:14px!important;color:var(--tx)!important;margin-bottom:10px!important}
+.monitor-section{min-width:0}
+.monitor-section h2{font-size:13px;margin:0 0 7px;color:var(--mut);font-weight:600}
+.monitor-bottom{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;margin-top:12px;align-items:start}
+.monitor-bottom .monitor-section{border-top:1px solid var(--bd);padding-top:10px}
+.monitor-bottom .grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+.monitor-bottom .m b{font-size:18px}
+.monitor-bottom #chart{height:150px}
+@media(max-width:620px){.monitor-bottom{grid-template-columns:minmax(0,1fr)}.monitor-bottom .grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* Desktop: observe queue, metrics and delay chart without vertical scrolling. */
+@media (min-width: 900px) and (min-height: 650px){
+ main{max-width:1180px;padding:8px 16px}
+ h1{font-size:18px;margin:0 0 1px}
+ main>.sub{font-size:11px;line-height:1.35;margin-bottom:6px}
+ .card{margin-bottom:7px;padding:8px 12px}
+ .monitor-card{display:grid;grid-template-columns:minmax(0,1.24fr) minmax(0,1fr);column-gap:16px;align-items:start;padding:8px 12px}
+ .monitor-title{grid-column:1/-1;margin-bottom:4px!important}
+ .monitor-card>.monitor-section{grid-column:1;grid-row:2}
+ .monitor-bottom{grid-column:2;grid-row:2;display:flex;flex-direction:column;gap:6px;margin-top:0}
+ .monitor-bottom .monitor-section{padding-top:0;border-top:0}
+ .monitor-bottom .monitor-section+ .monitor-section{border-top:1px solid var(--bd);padding-top:5px}
+ #net{height:190px!important}
+ .queue-stats{font-size:12px;line-height:1.3;gap:2px;margin-top:5px;padding:6px 8px}
+ .leg{font-size:11px;line-height:1.35;gap:5px 10px;margin-top:4px}
+ .monitor-bottom .grid{gap:5px}
+ .m{padding:4px 8px}
+ .m b,.monitor-bottom .m b{font-size:17px}
+ .m span{font-size:11px}
+ .msg{min-height:0;font-size:12px;line-height:1.45;padding:6px 8px;margin-top:6px!important}
+ .monitor-bottom #chart{height:105px!important}
+ .monitor-section h2{margin-bottom:3px}
+ .monitor-bottom .monitor-section [style*="margin-top:10px"]{margin-top:5px!important;font-size:12px!important}
+ .row{gap:5px}
+ button{padding:5px 9px;font-size:12px}
+ .card>h2{margin-bottom:4px}
+ .card .sub{font-size:11px;line-height:1.35;margin-top:4px!important}
+}
+@media (min-width: 900px) and (max-height: 740px){
+ #net{height:160px!important}
+ .monitor-bottom #chart{height:88px!important}
+ .monitor-bottom .m b{font-size:15px}
+ .queue-stats{font-size:11px}
+}
+</style>
+</head>
+<body>
+<main>
+<h1>混雑すると何が起こるか ― 音声優先制御あり</h1>
+<p class="sub">音声パケットを優先する共有回線（非プリエンプティブ優先キュー）。音声とファイルの通信品質を観察できます。</p>
+
+<div class="card monitor-card">
+<h2 class="monitor-title">通信の状態をまとめて観察（①・②・③）</h2>
+<section class="monitor-section"><h2>① 回線のようす</h2>
+<canvas id="net" height="230"></canvas>
+<div class="queue-stats" aria-label="キューの状況">
+<div id="qtotal">キュー内：0個（音声0個／ファイル0個）</div>
+<div id="qomit">うち省略：0個（音声0個／ファイル0個）</div>
+<div id="qoverflow">バッファあふれ：累計0個（音声0個／ファイル0個）</div>
+</div>
+<div class="leg"><span><i style="background:var(--v)"></i>音声パケット（小・20msごと）</span><span><i style="background:var(--f)"></i>ファイルパケット（大）</span><span><i style="background:#dc2626"></i>音声パケット（遅延150ms超）</span><span>回線容量：1 Mbps / バッファ：50 KB</span></div>
+</section>
+<div class="monitor-bottom">
+<section class="monitor-section"><h2>② 混雑状況と音声への影響</h2>
+<div class="grid">
+<div class="m"><span>キュー滞留</span><b id="mq">0 KB</b></div>
+<div class="m"><span>音声の遅延</span><b id="md">0 ms</b></div>
+<div class="m"><span>音声の途切れ率</span><b id="mg">0 %</b></div>
+<div class="m"><span>ファイルのドロップ</span><b id="mf">0 %</b></div>
+</div>
+<div style="margin-top:10px;font-size:13px">ファイル到達量（目安：5 MB） <span id="fp" style="color:var(--mut)"></span></div>
+<div class="bar"><div id="fbar"></div></div>
+<div class="msg" id="msg" style="margin-top:12px" aria-live="polite"></div>
+</section>
+<section class="monitor-section"><h2>③ 遅延の推移（直近20秒）</h2>
+<canvas id="chart" height="150"></canvas>
+<div class="leg"><span><i style="background:var(--v)"></i>音声の遅延</span><span><i style="background:var(--lost)"></i>許容上限 150 ms（これを超えると間に合わない）</span></div>
+</section>
+</div>
+</div>
+
+<div class="card"><h2>④ ファイル転送量を変える</h2>
+<div class="row" style="margin-bottom:8px">
+<span id="lv" style="min-width:150px;font-weight:600"></span>
+<input id="load" type="range" min="0" max="1600" step="50" value="0">
+</div>
+<div class="row">
+<button data-l="0">混雑なし</button><button data-l="600">やや多い</button><button data-l="950">ほぼ満杯</button><button data-l="1300">輻輳</button>
+<button id="auto">▶ 自動シナリオ</button><span id="autoStatus" style="font-size:12px;color:var(--mut)" aria-live="polite"></span>
+<button id="snd">🔇 音を聞く</button>
+<button id="slow">🐢 超スロー（1/40倍）</button><button id="rst">リセット</button>
+</div>
+<p class="sub" style="margin:8px 0 0">音：短い電子音の一定リズムで音声を模式的に表現します。再生期限に間に合わない・破棄された音声パケットに対応する部分が無音になります。スロー再生中も音のリズムは一定で、直近の受信状況を反映します。</p>
+</div>
+
+<p class="sub">※ 音声パケットをファイルパケットより優先して送信します（送信中のパケットは中断しません）。共有バッファ50 KBで、到着時に空きがなければ種類にかかわらず破棄します。自動シナリオは約32秒（シミュレーション時間）で送信を停止します。「送信終了」は5 MBの受信完了を意味しません。破棄パケットの再送はありません。簡易モデルです。ファイル側は実際の TCP のような送信抑制をせず、設定した量を送り続けると仮定しています。音声の再生は「150 msの受信バッファ後に再生」とし、その時点で届いていなければ途切れとして扱います。</p>
+</main>
+
+<script>
+(function(){
+var C=125000,BUF=50000,PROP=0.02,VSZ=200,FSZ=1500,VI=0.02,PLAY=0.17,LIM=150,FILE=5e6,DT=0.005;
+var S;
+function init(){S={t:0,ema:20,out:[],dr:[],q:[],qb:0,arr:[],vseq:0,vmap:{},pseq:0,fa:0,fl:0,fd:0,fdel:0,fdrop:0,vdrop:0,fsent:0,strip:[],hist:[],lastD:0,hacc:0,done:null,load:S?S.load:0,nextV:0}}
+init();
+var $=function(i){return document.getElementById(i)};
+var load=$('load');
+function setLoad(v){S.load=+v;load.value=v;$('lv').textContent='ファイル送信：'+v+' kbps'}
+setLoad(0);
+load.oninput=function(){auto=false;$('auto').classList.remove('on');$('autoStatus').textContent='';setLoad(load.value)};
+document.querySelectorAll('button[data-l]').forEach(function(b){b.onclick=function(){auto=false;$('auto').classList.remove('on');$('autoStatus').textContent='';setLoad(b.dataset.l)}});
+$('rst').onclick=function(){auto=false;$('auto').classList.remove('on');$('autoStatus').textContent='';var l=S.load;init();setLoad(l)};
+var slow=false;$('slow').onclick=function(){slow=!slow;this.classList.toggle('on',slow)};
+var auto=false,aT=0,autoFinished=false;
+// 32-second demonstration: rise in traffic, end of file sending, queue drains.
+var phases=[{until:5,rate:0,label:'音声のみ'},{until:10,rate:600,label:'ファイル転送開始'},{until:16,rate:950,label:'回線容量を超過'},{until:22,rate:1300,label:'輻輳'},{until:27,rate:1500,label:'強い輻輳'},{until:32,rate:0,label:'ファイル送信終了・キュー排出中'}];
+$('auto').onclick=function(){auto=!auto;this.classList.toggle('on',auto);if(auto){init();aT=0;autoFinished=false;setLoad(0);$('autoStatus').textContent='0/32秒：音声のみ'}else{$('autoStatus').textContent='自動シナリオ停止'}};
+// Audible packet monitor: a repeating 250 ms tone phrase, divided into ten
+// 25 ms slots. Each slot is sounded only if its corresponding voice packet
+// met the playout deadline. Silence represents late or dropped packets.
+var snd=false,ac,osc,gn,audioTimer=null,audioCursor=0;
+function stopAudio(){
+ if(audioTimer!==null){clearInterval(audioTimer);audioTimer=null;}
+ if(gn&&ac){gn.gain.cancelScheduledValues(ac.currentTime);gn.gain.setValueAtTime(0,ac.currentTime);}
+}
+function soundTick(){
+ if(!snd||!ac||!gn)return;
+ var now=ac.currentTime;
+ // Each phrase corresponds to the most recently played ten voice packets.
+ // A rhythmic phrase is more intelligible than the original continuous tone.
+ var recent=S.strip.slice(-10);
+ var slot=audioCursor%10;
+ var ok=recent.length===10&&recent[slot]===0;
+ // During startup, play a complete phrase until ten packets have been assessed.
+ if(recent.length<10)ok=true;
+ gn.gain.cancelScheduledValues(now);
+ gn.gain.setValueAtTime(0,now);
+ if(ok){
+   gn.gain.linearRampToValueAtTime(0.065,now+0.003);
+   gn.gain.setValueAtTime(0.065,now+0.015);
+   gn.gain.linearRampToValueAtTime(0,now+0.021);
+ }
+ audioCursor++;
+}
+$('snd').onclick=function(){
+ snd=!snd;this.classList.toggle('on',snd);
+ this.textContent=snd?'🔊 音を止める':'🔇 音を聞く';
+ if(!snd){stopAudio();return;}
+ try{
+  ac=ac||new (window.AudioContext||window.webkitAudioContext)();
+  if(!osc){osc=ac.createOscillator();gn=ac.createGain();osc.type='sine';osc.frequency.value=660;gn.gain.value=0;osc.connect(gn);gn.connect(ac.destination);osc.start();}
+  ac.resume();audioCursor=0;soundTick();audioTimer=setInterval(soundTick,25);
+ }catch(e){snd=false;this.classList.remove('on');this.textContent='🔇 音を聞く';stopAudio();}
+};
+
+function step(){
+ var t=S.t;
+ // voice
+ while(S.nextV<=t){var p={k:'v',s:VSZ,rem:VSZ,ts:S.nextV,seq:S.vseq++};S.nextV+=VI;enq(p)}
+ // file
+ S.fa+=S.load*125*DT;
+ while(S.fa>=FSZ){S.fa-=FSZ;S.fsent++;enq({k:'f',s:FSZ,rem:FSZ,ts:t})}
+ // service
+ var bud=C*DT;
+ while(bud>0&&S.q.length){var h=S.q[0],u=Math.min(bud,h.rem);h.rem-=u;bud-=u;S.qb-=u;
+  if(h.rem<=0.001){S.q.shift();h.arr=t+PROP;S.arr.push(h);S.out.push({k:h.k,td:t,late:h.k==='v'&&(h.arr-h.ts)*1000>LIM})}}
+ // arrivals
+ while(S.arr.length&&S.arr[0].arr<=t+1e-9){var a=S.arr.shift();
+  if(a.k==='v'){a.d=(a.arr-a.ts)*1000;S.vmap[a.seq]=a;S.lastD=a.d;S.ema+=(a.d-S.ema)*0.15}
+  else{S.fd+=a.s;S.fdel++;if(S.fd>=FILE&&S.done===null)S.done=t}}
+ // playout
+ var ps=Math.floor((t-PLAY)/VI);
+ while(S.pseq<=ps){var f=S.vmap[S.pseq],st;
+  if(f&&f.d<=LIM)st=0;else if(f===undefined&&S.vmap['x'+S.pseq])st=2;else if(S.vmap['x'+S.pseq])st=2;else st=1;
+  S.strip.push(st);if(S.strip.length>500)S.strip.shift();delete S.vmap[S.pseq];delete S.vmap['x'+S.pseq];S.pseq++;S.cur=st}
+ // history
+ S.hacc+=DT;if(S.hacc>=0.1){S.hacc=0;S.hist.push({t:S.t,v:S.ema});if(S.hist.length>200)S.hist.shift()}
+ S.t+=DT;
+}
+function enq(p){
+ if(S.qb+p.s>BUF){if(p.k==='v'){S.vmap['x'+p.seq]=1;S.vdrop++}else S.fdrop++;S.dr.push({t:S.t,wall:performance.now(),k:p.k});return}
+ // Non-preemptive strict priority: never interrupt a packet already in transmission.
+ // Voice packets wait ahead of queued file packets, preserving FIFO within each class.
+ if(p.k==='v'){
+  var idx=(S.q.length && S.q[0].rem<S.q[0].s-0.001)?1:0;
+  while(idx<S.q.length && S.q[idx].k==='v')idx++;
+  S.q.splice(idx,0,p);
+ }else S.q.push(p);
+ S.qb+=p.s}
+
+var cn=$('net'),cc=$('chart');
+// Keep the drawing buffer dimensions fixed throughout the animation.
+// CSS alone scales the canvas to the card width, preventing layout jumps.
+[cn,cc].forEach(function(c){
+ var h=Number(c.getAttribute('height'));
+ c.width=860;
+ c.height=h;
+ c.style.height=h+'px';
+ c._w=860;
+ c._b=document.createElement('canvas');
+ c._b.width=860;
+ c._b.height=h;
+});
+function fit(c){
+ var x=c._b.getContext('2d');
+ x.setTransform(1,0,0,1,0,0);
+ x.clearRect(0,0,c._w,c._b.height);
+ return [x,c._w,c._b.height];
+}
+function flush(c){
+ var t=c.getContext('2d');
+ t.setTransform(1,0,0,1,0,0);
+ // Clear the previous frame: transparent pixels must erase old packet drawings.
+ t.clearRect(0,0,c.width,c.height);
+ t.drawImage(c._b,0,0);
+}
+var CC={};function col(n){return CC[n]||(CC[n]=getComputedStyle(document.documentElement).getPropertyValue(n).trim())}
+
+function drawNet(){
+ var a=fit(cn),x=a[0],W=a[1],H=a[2],cv=col('--v'),cf=col('--f'),tx=col('--tx'),mu=col('--mut'),bd=col('--bd');
+ x.font='12px sans-serif';x.fillStyle=tx;x.textAlign='left';
+ x.fillText('送信側',8,16);x.fillText('受信側',W-44,16);
+ x.fillStyle=cv;x.fillRect(8,26,30,14);x.fillStyle=cf;x.fillRect(8,46,30,14);
+ x.fillStyle=mu;x.fillText('音声',44,38);x.fillText('ファイル',44,58);
+ var qx=100,qw=W-270,qy=29;
+ x.strokeStyle=bd;x.strokeRect(qx,qy,qw,38);
+ x.fillStyle=mu;x.textAlign='left';x.fillText('送信待ちキュー（右が先頭・音声を優先）',qx,qy-7);
+ // Priority order: queue head is on the right. Draw from right to left.
+ var rightEdge=qx+qw-7,shown=0,shownV=0,shownF=0;
+ for(var i=0;i<S.q.length;i++){
+  var p=S.q[i],w=p.k==='v'?9:19;
+  var px=rightEdge-w;
+  if(px<qx+7)break;
+  x.fillStyle=p.k==='v'?cv:cf;x.fillRect(px,qy+12,w,14);
+  rightEdge=px-5;shown++;if(p.k==='v')shownV++;else shownF++;
+ }
+ // receiver
+ var cur=S.cur||0,cl=[col('--ok'),col('--late'),col('--lost')][cur];
+ x.fillStyle=cl;x.beginPath();x.arc(W-30,H-55,14,0,7);x.fill();
+ x.fillStyle=tx;x.textAlign='center';x.fillText(['♪','…','×'][cur],W-30,H-51);
+ // Shared path: a single lane. Positions are schematic so packets never overlap.
+ x.fillStyle=mu;x.textAlign='center';x.fillText('→',qx-20,H-59);
+ var bx=qx+qw+8,bw=W-64-bx,t=S.t,cy=H-55;
+ x.strokeStyle=bd;x.beginPath();x.moveTo(bx,cy);x.lineTo(bx+bw,cy);x.stroke();
+ x.fillStyle=mu;x.textAlign='left';x.fillText('送信済みパケット（模式表示） →',bx,H-8);
+ // Show the newest transmitted packets on a single lane, moving toward the receiver.
+ // Keep a short history, but render in chronological order from right (oldest)
+ // to left (newest), so new voice packets cannot be hidden by old file packets.
+ var travel=0.35;
+ while(S.out.length&&t-S.out[0].td>travel)S.out.shift();
+ var packets=S.out.slice().reverse(),left=bx+2;
+ for(var j=0;j<packets.length;j++){
+  var o=packets[j],w=o.k==='v'?9:16;
+  var desired=bx+Math.max(0,Math.min(1,(t-o.td)/travel))*bw;
+  var px=Math.max(left,desired);
+  if(px+w>bx+bw-2)continue;
+  x.fillStyle=o.k==='v'?(o.late?'#dc2626':cv):cf;
+  x.fillRect(px,cy-7,w,14);
+  left=px+w+4;
+ }
+ // Expire the dropped-packet icons after two seconds of actual display time.
+ // This also works during 1/40 speed playback.
+ var nowWall=performance.now();
+ while(S.dr.length&&nowWall-S.dr[0].wall>2000)S.dr.shift();
+ x.textAlign='left';x.fillStyle=mu;x.font='11px sans-serif';
+ x.fillText('破棄されたパケット',8,98);
+ var visible=S.dr.slice(-5),dx=8;
+ for(var z=0;z<visible.length;z++){
+  var d=visible[z],dw=d.k==='v'?9:16;
+  x.fillStyle=d.k==='v'?cv:cf;
+  x.fillRect(dx,108,dw,14);
+  x.strokeStyle=col('--lost');x.lineWidth=1.5;x.strokeRect(dx-1,107,dw+2,16);x.lineWidth=1;
+  dx+=dw+5;
+ }
+ x.fillStyle=mu;x.font='10px sans-serif';
+ x.fillText('赤枠＝破棄（直近2秒・実時間）',8,139);
+
+}
+
+function drawChart(){
+ var a=fit(cc),x=a[0],W=a[1],H=a[2],mx=500,mu=col('--mut'),bd=col('--bd');
+ x.strokeStyle=bd;x.fillStyle=mu;x.font='11px sans-serif';x.textAlign='left';
+ [0,150,300,500].forEach(function(v){var y=H-4-(H-14)*v/mx;x.beginPath();x.moveTo(30,y);x.lineTo(W,y);x.stroke();x.fillText(v,2,y+4)});
+ var y=H-4-(H-14)*LIM/mx;x.strokeStyle=col('--lost');x.setLineDash([5,4]);x.beginPath();x.moveTo(30,y);x.lineTo(W,y);x.stroke();x.setLineDash([]);
+ var pts=S.hist.concat([{t:S.t,v:S.ema}]),X=function(t){return W-(S.t-t)/20*(W-30)},Y=function(v){return H-4-(H-14)*Math.min(v,mx)/mx};x.beginPath();
+ pts.forEach(function(p,i){i?x.lineTo(X(p.t),Y(p.v)):x.moveTo(X(p.t),Y(p.v))});x.strokeStyle=col('--v');x.lineWidth=2;x.stroke();x.lineWidth=1;x.lineTo(X(S.t),H-4);x.lineTo(X(pts[0].t),H-4);x.closePath();x.globalAlpha=0.15;x.fillStyle=col('--v');x.fill();x.globalAlpha=1;
+}
+function ui(){
+ var tv=0,tf=0,sv=0,sf=0,rightEdge=100+(860-270)-7;
+ S.q.forEach(function(p,i){if(p.k==='v')tv++;else tf++;});
+ for(var qi=0;qi<S.q.length;qi++){var qp=S.q[qi],pw=qp.k==='v'?9:19,px=rightEdge-pw;if(px<107)break;rightEdge=px-5;if(qp.k==='v')sv++;else sf++;}
+ $('qtotal').textContent='キュー内：'+S.q.length+'個（音声'+tv+'個／ファイル'+tf+'個）';
+ $('qomit').textContent='うち省略：'+(S.q.length-sv-sf)+'個（音声'+(tv-sv)+'個／ファイル'+(tf-sf)+'個）';
+ $('qoverflow').textContent='バッファあふれ：累計'+(S.vdrop+S.fdrop)+'個（音声'+S.vdrop+'個／ファイル'+S.fdrop+'個）';
+ var n=S.strip.length,bad=0,i;for(i=0;i<n;i++)if(S.strip[i])bad++;
+ var gr=n?bad/n*100:0,qd=S.qb/C*1000+PROP*1000;
+ $('mq').textContent=(S.qb/1000).toFixed(1)+' KB';
+ $('md').textContent=Math.round(S.ema)+' ms';
+ $('mg').textContent=gr.toFixed(0)+' %';
+ var tot=S.fdel+S.fdrop+S.q.filter(function(p){return p.k==='f'}).length;
+ $('mf').textContent=(S.fdrop+S.fdel?S.fdrop/(S.fdrop+S.fdel)*100:0).toFixed(0)+' %';
+ var pr=Math.min(100,S.fd/FILE*100);$('fbar').style.width=pr+'%';
+ $('fp').textContent=S.done!==null?'5 MB到達！ '+S.done.toFixed(0)+' 秒':(S.load?pr.toFixed(0)+' %（'+(S.fd/1e6).toFixed(2)+' MB 到達）':(autoFinished||aT>=27&&auto?'送信停止（'+(S.fd/1e6).toFixed(2)+' MB 到達、破棄分の再送なし）':'待機中（送信量 0）'));
+ var m=$('msg'),c,t;
+ if(S.load===0){c='--ok';t='ファイル送信なし。音声パケットが優先的に送られ、通常はスムーズに届きます。'}
+ else if(gr<3&&qd<LIM){c='--ok';t='回線に余裕があり、音声はほぼ影響なし。キューもほとんど溜まっていません。'}
+ else if(gr<3){c='--late';t='キューが溜まり始めています。音声は待機中のファイルより優先されるため、遅延を抑えられます。'}
+ else if(gr<30){c='--late';t='音声優先制御により音声の待ち時間を抑えています。ただし送信中のファイルパケットは中断できず、バッファあふれも起こり得ます。'}
+ else{c='--lost';t='バッファが満杯です。音声を優先しても、バッファ容量の制約による破棄は起こり得ます。ファイル側の破棄も確認してください。'}
+ m.style.borderLeftColor=col(c);m.textContent=t;
+
+}
+var last=performance.now(),acc=0,uiT=0;
+function loop(now){
+ acc+=Math.min((now-last)/1000,0.2)*(slow?0.025:1);last=now;
+ while(acc>=DT){
+  if(auto){aT+=DT;var phase=phases.find(function(p){return aT<p.until});if(phase){if(S.load!==phase.rate)setLoad(phase.rate);if(Math.floor(aT*10)%5===0)$('autoStatus').textContent=Math.min(32,Math.floor(aT))+'/32秒：'+phase.label}else{if(S.load!==0)setLoad(0);auto=false;autoFinished=true;$('auto').classList.remove('on');$('autoStatus').textContent='シナリオ終了：ファイル送信停止（音声のみ継続）'}}
+  step();acc-=DT}
+ if(now-(loop.ld||0)>=32){loop.ld=now;try{if(uiT%120===0)CC={};drawNet();drawChart();flush(cn);flush(cc);uiT+=1;if(uiT%6===0)ui()}catch(e){}}
+ requestAnimationFrame(loop)}
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
